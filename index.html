@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Split — group expense ledger</title>
+<style>
+  :root{
+    --paper: #FAF6EE;
+    --paper-dark: #F0E9D8;
+    --ink: #1C2B29;
+    --ink-soft: #55655F;
+    --line: #D9CFB8;
+    --teal: #0F6E5D;
+    --teal-dark: #0A4F42;
+    --amber: #B8862E;
+    --rust: #A6432F;
+    --white: #FFFFFF;
+    --radius: 10px;
+  }
+  *{ box-sizing: border-box; }
+  body{
+    margin:0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: Georgia, 'Iowan Old Style', serif;
+    padding: 28px 16px 60px;
+  }
+  .wrap{ max-width: 920px; margin: 0 auto; }
+  header{ margin-bottom: 28px; }
+  header .eyebrow{
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--teal-dark);
+    margin: 0 0 6px;
+  }
+  h1{
+    font-size: 30px;
+    margin: 0 0 6px;
+    letter-spacing: -0.01em;
+  }
+  header p{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: var(--ink-soft);
+    margin: 0;
+    font-size: 14.5px;
+    max-width: 60ch;
+  }
+  .card{
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    margin-bottom: 20px;
+  }
+  .card h2{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--teal-dark);
+    margin: 0 0 14px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .card h2 .n{
+    background: var(--teal); color:#fff;
+    width:20px; height:20px; border-radius:50%;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-family: ui-monospace, monospace; font-size:11px;
+  }
+  label{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 12px; color: var(--ink-soft); display:block; margin-bottom:4px;
+  }
+  input[type=text], input[type=number], input[type=date], select{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--paper);
+    color: var(--ink);
+    width: 100%;
+  }
+  input:focus, select:focus{ outline: 2px solid var(--teal); outline-offset: 1px; }
+  button{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13.5px;
+    font-weight: 600;
+    border-radius: 6px;
+    border: none;
+    padding: 10px 16px;
+    cursor: pointer;
+  }
+  .btn-primary{ background: var(--teal); color:#fff; }
+  .btn-primary:hover{ background: var(--teal-dark); }
+  .btn-ghost{ background: transparent; color: var(--rust); border: 1px solid var(--line); padding: 6px 10px; font-size:12px;}
+  .btn-ghost:hover{ background: #FBEDEA; }
+
+  /* People chips */
+  .people-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom: 14px; }
+  .chip{
+    display:flex; align-items:center; gap:8px;
+    background: var(--paper-dark);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 6px 6px 14px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13.5px;
+  }
+  .chip button{
+    background: none; border:none; color: var(--rust);
+    width:20px; height:20px; border-radius:50%;
+    padding:0; font-size:14px; line-height:1;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .chip button:hover{ background: #FBEDEA; }
+  .add-person{ display:flex; gap:8px; max-width: 340px; }
+
+  /* Expense form */
+  .exp-grid{
+    display:grid;
+    grid-template-columns: 130px 1fr 140px 110px;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .split-row{ margin-bottom: 14px; }
+  .split-label{ display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
+  .split-people{ display:flex; flex-wrap:wrap; gap:6px; }
+  .split-pill{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 12px;
+    cursor: pointer;
+    user-select: none;
+    background: var(--paper);
+    color: var(--ink-soft);
+  }
+  .split-pill.on{
+    background: var(--teal); border-color: var(--teal); color:#fff;
+  }
+  .link-btn{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size:12px; color: var(--teal-dark); background:none; border:none; cursor:pointer;
+    text-decoration: underline; padding:0;
+  }
+
+  /* Ledger table */
+  table{ width:100%; border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13.5px;}
+  thead th{
+    text-align:left; font-size: 11px; text-transform:uppercase; letter-spacing:.06em;
+    color: var(--ink-soft); border-bottom: 1px solid var(--line); padding: 8px 8px;
+  }
+  tbody td{ padding: 10px 8px; border-bottom: 1px dashed var(--line); vertical-align: top;}
+  tbody tr:last-child td{ border-bottom: none; }
+  .num{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-align:right; white-space:nowrap;}
+  .muted{ color: var(--ink-soft); font-size: 12px; }
+  .empty{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: var(--ink-soft); font-size: 13.5px; padding: 10px 0;
+  }
+
+  /* Balances */
+  .bal-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap:12px; }
+  .bal-card{
+    border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: var(--paper);
+  }
+  .bal-name{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-weight:600; font-size:14px; margin-bottom:6px;}
+  .bal-amt{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 19px; }
+  .bal-sub{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 11px; color: var(--ink-soft); margin-top:2px;}
+  .pos{ color: var(--teal-dark); }
+  .neg{ color: var(--rust); }
+
+  /* Receipt */
+  .receipt{
+    background: var(--paper-dark);
+    border: 1px dashed var(--line);
+    border-radius: 6px;
+    padding: 16px 18px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13.5px;
+  }
+  .receipt .line{
+    display:flex; justify-content:space-between; padding: 6px 0;
+    border-bottom: 1px dotted var(--line);
+  }
+  .receipt .line:last-child{ border-bottom:none; }
+  .receipt .arrow{ color: var(--amber); margin: 0 8px; }
+  .settled{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: var(--ink-soft); text-align:center; padding: 10px 0;
+  }
+  footer{
+    text-align:center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: var(--ink-soft); font-size: 12px; margin-top: 30px;
+  }
+  @media (max-width: 620px){
+    .exp-grid{ grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Group ledger</p>
+    <h1>Split</h1>
+    <p>Add everyone in the group, log who paid for what, and Split works out the fewest payments needed to settle up. Works with any number of people — add or remove anytime.</p>
+  </header>
+
+  <div class="card">
+    <h2><span class="n">1</span>People</h2>
+    <div class="people-row" id="peopleRow"></div>
+    <div class="add-person">
+      <input type="text" id="newPersonName" placeholder="Add a name and press Enter">
+      <button class="btn-primary" onclick="addPerson()">Add</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">2</span>Add an expense</h2>
+    <div class="exp-grid">
+      <div>
+        <label>Date</label>
+        <input type="date" id="expDate">
+      </div>
+      <div>
+        <label>Description</label>
+        <input type="text" id="expDesc" placeholder="e.g. Hotel — Banff">
+      </div>
+      <div>
+        <label>Paid by</label>
+        <select id="expPaidBy"></select>
+      </div>
+      <div>
+        <label>Amount</label>
+        <input type="number" id="expAmount" placeholder="0.00" step="0.01" min="0">
+      </div>
+    </div>
+    <div class="split-row">
+      <div class="split-label">
+        <label style="margin:0;">Split among</label>
+        <div>
+          <button class="link-btn" onclick="setAllSplit(true)">All</button>
+          &nbsp;·&nbsp;
+          <button class="link-btn" onclick="setAllSplit(false)">None</button>
+        </div>
+      </div>
+      <div class="split-people" id="splitPeople"></div>
+    </div>
+    <button class="btn-primary" onclick="addExpense()">Add expense</button>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">3</span>Expense log</h2>
+    <div id="expenseTableWrap"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">4</span>Balances</h2>
+    <div class="bal-grid" id="balGrid"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">5</span>Settle up</h2>
+    <div id="receiptWrap"></div>
+  </div>
+
+  <footer>Everything here lives only in this browser tab — nothing is saved or uploaded. Refreshing the page clears it.</footer>
+</div>
+
+<script>
+let people = ["Alex", "Jordan", "Sam", "Taylor", "Morgan"];
+let expenses = []; // {id, date, desc, paidBy, amount, splitWith: Set of names}
+let nextId = 1;
+let currentSplit = new Set(people);
+
+function fmt(n){
+  const sign = n < 0 ? "-" : "";
+  return sign + "$" + Math.abs(n).toFixed(2);
+}
+
+function renderPeople(){
+  const row = document.getElementById('peopleRow');
+  row.innerHTML = "";
+  if(people.length === 0){
+    row.innerHTML = '<span class="muted">No one added yet.</span>';
+  }
+  people.forEach(name => {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.innerHTML = `<span>${escapeHtml(name)}</span>`;
+    const rm = document.createElement('button');
+    rm.textContent = '×';
+    rm.title = 'Remove ' + name;
+    rm.onclick = () => removePerson(name);
+    chip.appendChild(rm);
+    row.appendChild(chip);
+  });
+
+  const sel = document.getElementById('expPaidBy');
+  const prevVal = sel.value;
+  sel.innerHTML = "";
+  people.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    sel.appendChild(opt);
+  });
+  if(people.includes(prevVal)) sel.value = prevVal;
+
+  renderSplitPeople();
+}
+
+function renderSplitPeople(){
+  const wrap = document.getElementById('splitPeople');
+  wrap.innerHTML = "";
+  people.forEach(name => {
+    const pill = document.createElement('div');
+    pill.className = 'split-pill' + (currentSplit.has(name) ? ' on' : '');
+    pill.textContent = name;
+    pill.onclick = () => {
+      if(currentSplit.has(name)) currentSplit.delete(name); else currentSplit.add(name);
+      renderSplitPeople();
+    };
+    wrap.appendChild(pill);
+  });
+}
+
+function setAllSplit(all){
+  currentSplit = all ? new Set(people) : new Set();
+  renderSplitPeople();
+}
+
+function addPerson(){
+  const input = document.getElementById('newPersonName');
+  const name = input.value.trim();
+  if(!name) return;
+  if(people.includes(name)){ input.value=""; return; }
+  people.push(name);
+  currentSplit.add(name);
+  input.value = "";
+  renderPeople();
+  renderAll();
+}
+document.getElementById('newPersonName').addEventListener('keydown', e => {
+  if(e.key === 'Enter'){ e.preventDefault(); addPerson(); }
+});
+
+function removePerson(name){
+  const usedIn = expenses.some(e => e.paidBy === name || e.splitWith.has(name));
+  if(usedIn){
+    const ok = confirm(name + " is used in existing expenses. Remove them anyway? Those expenses will be updated to drop them from splits (and deleted if they were the payer).");
+    if(!ok) return;
+  }
+  people = people.filter(p => p !== name);
+  currentSplit.delete(name);
+  expenses = expenses.filter(e => e.paidBy !== name);
+  expenses.forEach(e => e.splitWith.delete(name));
+  renderPeople();
+  renderAll();
+}
+
+function addExpense(){
+  const date = document.getElementById('expDate').value;
+  const desc = document.getElementById('expDesc').value.trim();
+  const paidBy = document.getElementById('expPaidBy').value;
+  const amount = parseFloat(document.getElementById('expAmount').value);
+
+  if(!paidBy){ alert("Add at least one person first."); return; }
+  if(!desc){ alert("Give the expense a description."); return; }
+  if(!amount || amount <= 0){ alert("Enter an amount greater than 0."); return; }
+  if(currentSplit.size === 0){ alert("Pick at least one person to split with."); return; }
+
+  expenses.push({
+    id: nextId++,
+    date: date || "",
+    desc,
+    paidBy,
+    amount,
+    splitWith: new Set(currentSplit)
+  });
+
+  document.getElementById('expDesc').value = "";
+  document.getElementById('expAmount').value = "";
+  renderAll();
+}
+
+function deleteExpense(id){
+  expenses = expenses.filter(e => e.id !== id);
+  renderAll();
+}
+
+function renderExpenseTable(){
+  const wrap = document.getElementById('expenseTableWrap');
+  if(expenses.length === 0){
+    wrap.innerHTML = '<div class="empty">No expenses yet — add your first one above.</div>';
+    return;
+  }
+  let rows = expenses.map(e => {
+    const share = e.amount / e.splitWith.size;
+    const splitNames = [...e.splitWith].join(', ');
+    return `<tr>
+      <td class="muted">${e.date || '—'}</td>
+      <td>${escapeHtml(e.desc)}<br><span class="muted">${escapeHtml(splitNames)} (${fmt(share)} each)</span></td>
+      <td>${escapeHtml(e.paidBy)}</td>
+      <td class="num">${fmt(e.amount)}</td>
+      <td><button class="btn-ghost" onclick="deleteExpense(${e.id})">Remove</button></td>
+    </tr>`;
+  }).join("");
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Date</th><th>Description</th><th>Paid by</th><th class="num">Amount</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function computeBalances(){
+  const paid = {}, share = {};
+  people.forEach(p => { paid[p] = 0; share[p] = 0; });
+  expenses.forEach(e => {
+    paid[e.paidBy] = (paid[e.paidBy] || 0) + e.amount;
+    const per = e.amount / e.splitWith.size;
+    e.splitWith.forEach(p => { share[p] = (share[p] || 0) + per; });
+  });
+  const net = {};
+  people.forEach(p => { net[p] = (paid[p] || 0) - (share[p] || 0); });
+  return { paid, share, net };
+}
+
+function renderBalances(net, paid, share){
+  const grid = document.getElementById('balGrid');
+  if(people.length === 0){ grid.innerHTML = '<div class="empty">Add people to see balances.</div>'; return; }
+  grid.innerHTML = people.map(p => {
+    const n = net[p] || 0;
+    const cls = n >= 0.005 ? 'pos' : (n <= -0.005 ? 'neg' : '');
+    const label = n >= 0.005 ? 'is owed' : (n <= -0.005 ? 'owes the group' : 'settled up');
+    return `<div class="bal-card">
+      <div class="bal-name">${escapeHtml(p)}</div>
+      <div class="bal-amt ${cls}">${fmt(Math.abs(n))}</div>
+      <div class="bal-sub">${label} · paid ${fmt(paid[p]||0)}, share ${fmt(share[p]||0)}</div>
+    </div>`;
+  }).join("");
+}
+
+function computeSettlement(net){
+  // greedy minimum-transaction settlement
+  const creditors = [];
+  const debtors = [];
+  Object.keys(net).forEach(p => {
+    const v = Math.round(net[p] * 100) / 100;
+    if(v > 0.004) creditors.push({name: p, amt: v});
+    else if(v < -0.004) debtors.push({name: p, amt: -v});
+  });
+  creditors.sort((a,b) => b.amt - a.amt);
+  debtors.sort((a,b) => b.amt - a.amt);
+
+  const txns = [];
+  let i = 0, j = 0;
+  while(i < debtors.length && j < creditors.length){
+    const d = debtors[i], c = creditors[j];
+    const amt = Math.min(d.amt, c.amt);
+    if(amt > 0.004){
+      txns.push({ from: d.name, to: c.name, amt: Math.round(amt*100)/100 });
+    }
+    d.amt -= amt; c.amt -= amt;
+    if(d.amt <= 0.004) i++;
+    if(c.amt <= 0.004) j++;
+  }
+  return txns;
+}
+
+function renderReceipt(txns){
+  const wrap = document.getElementById('receiptWrap');
+  if(expenses.length === 0){
+    wrap.innerHTML = '<div class="empty">Add expenses to see who owes whom.</div>';
+    return;
+  }
+  if(txns.length === 0){
+    wrap.innerHTML = '<div class="settled">Everyone is settled up — no payments needed.</div>';
+    return;
+  }
+  const lines = txns.map(t => `<div class="line">
+    <span>${escapeHtml(t.from)} <span class="arrow">&#8594;</span> ${escapeHtml(t.to)}</span>
+    <span>${fmt(t.amt)}</span>
+  </div>`).join("");
+  wrap.innerHTML = `<div class="receipt">${lines}</div>`;
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderAll(){
+  renderExpenseTable();
+  const { paid, share, net } = computeBalances();
+  renderBalances(net, paid, share);
+  const txns = computeSettlement(net);
+  renderReceipt(txns);
+}
+
+// init
+renderPeople();
+renderAll();
+</script>
+</body>
+</html>
