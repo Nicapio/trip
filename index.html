@@ -269,9 +269,21 @@
     <div id="receiptWrap"></div>
   </div>
 
+  <div class="card">
+    <h2><span class="n">6</span>Export</h2>
+    <p class="muted" style="margin:0 0 12px;">Download everything above — people, expense log, balances, and the settle-up plan.</p>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <button class="btn-primary" onclick="exportToExcel()">Download Excel (.xlsx)</button>
+      <button class="btn-primary" onclick="exportToPDF()">Download PDF</button>
+    </div>
+  </div>
+
   <footer>Everything here lives only in this browser tab — nothing is saved or uploaded. Refreshing the page clears it.</footer>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script>
 let people = ["Alex", "Jordan", "Sam", "Taylor", "Morgan"];
 let expenses = []; // {id, date, desc, paidBy, amount, splitWith: Set of names}
