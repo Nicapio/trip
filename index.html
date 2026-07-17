@@ -201,6 +201,19 @@
   @media (max-width: 620px){
     .exp-grid{ grid-template-columns: 1fr 1fr; }
   }
+
+  #printArea{ display:none; }
+  @media print{
+    body > .wrap > *:not(#printAreaWrap){ display:none !important; }
+    #printAreaWrap{ display:block !important; }
+    #printArea{ display:block !important; }
+    #printArea h1{ font-size:20px; margin-bottom:2px; }
+    #printArea .sub{ color:#666; font-size:11px; margin-bottom:18px; }
+    #printArea h2{ font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:#0F6E5D; margin-top:22px; }
+    #printArea table{ width:100%; border-collapse:collapse; font-size:11px; }
+    #printArea th, #printArea td{ padding:5px 6px; border-bottom:1px solid #ddd; text-align:left; }
+    #printArea th{ background:#0F6E5D !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  }
 </style>
 </head>
 <body>
@@ -210,6 +223,18 @@
     <h1>Split</h1>
     <p>Add everyone in the group, log who paid for what, and Split works out the fewest payments needed to settle up. Works with any number of people — add or remove anytime.</p>
   </header>
+
+  <div class="card" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+    <div>
+      <h2 style="margin-bottom:4px;">Your session</h2>
+      <p class="muted" style="margin:0;">Save your data to a .csv file, and load it back in next time to pick up where you left off.</p>
+    </div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <button class="btn-primary" onclick="saveDataCSV()">Save data (.csv)</button>
+      <button class="btn-primary" onclick="document.getElementById('loadFileInput').click()">Load data (.csv)</button>
+      <input type="file" id="loadFileInput" accept=".csv,text/csv" style="display:none" onchange="loadDataCSV(event)">
+    </div>
+  </div>
 
   <div class="card">
     <h2><span class="n">1</span>People</h2>
@@ -271,24 +296,74 @@
 
   <div class="card">
     <h2><span class="n">6</span>Export</h2>
-    <p class="muted" style="margin:0 0 12px;">Download everything above — people, expense log, balances, and the settle-up plan.</p>
+    <p class="muted" style="margin:0 0 12px;">Download everything above — expense log, balances, and the settle-up plan. Both work offline, no external libraries.</p>
     <div style="display:flex; gap:10px; flex-wrap:wrap;">
-      <button class="btn-primary" onclick="exportToExcel()">Download Excel (.xlsx)</button>
-      <button class="btn-primary" onclick="exportToPDF()">Download PDF</button>
+      <button class="btn-primary" onclick="exportToExcel()">Download CSV (opens in Excel)</button>
+      <button class="btn-primary" onclick="exportToPDF()">Print / Save as PDF</button>
     </div>
   </div>
 
   <footer>Everything here lives only in this browser tab — nothing is saved or uploaded. Refreshing the page clears it.</footer>
+
+  <div id="printAreaWrap"><div id="printArea"></div></div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script>
-let people = ["Alex", "Jordan", "Sam", "Taylor", "Morgan"];
+let people = ["NIC","CKM","WAI","YIU","HUEN","TOBY","CHUNG","SZE"];
 let expenses = []; // {id, date, desc, paidBy, amount, splitWith: Set of names}
 let nextId = 1;
 let currentSplit = new Set(people);
+
+// Your Rockies trip data, restored so you don't have to re-enter it.
+const SAVED_EXPENSES = [
+["2026-07-04","Lunch - Tim Hortons","NIC",26.00,["NIC","CKM","WAI"]],
+["2026-07-04","Lunch - Linh Cafe","NIC",258.00,["NIC","CKM","WAI","YIU"]],
+["2026-07-06","Misc - Liquor (twisted tea)","NIC",20.00,["NIC","WAI"]],
+["2026-07-07","Dinner - Church chicken","NIC",30.00,["NIC","WAI","CKM"]],
+["2026-07-04","Lunch - Brazil vs Norway","NIC",168.00,["NIC","WAI","CKM","YIU"]],
+["2026-07-04","Dinner - Whistler (England vs Mexico)","NIC",97.56,["NIC","WAI","CKM","YIU"]],
+["2026-07-04","Value bud - weed","NIC",12.00,["NIC","WAI"]],
+["2026-07-07","BC Place - Snacks and drinks","NIC",75.00,["NIC","WAI","CKM"]],
+["2026-07-07","West Jet - luggage","NIC",107.50,["NIC","WAI","CKM"]],
+["2026-07-10","Dinner - Fanny Bay Oyster","NIC",340.00,["NIC","WAI","CKM","YIU"]],
+["2026-07-10","Lunch - St. James Banff (England vs Norway)","NIC",353.00,["NIC","WAI","CKM","YIU","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-11","Dinner - Canmore (Thai House)","NIC",223.00,["NIC","WAI","CKM","YIU","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-11","Misc - liquor (twisted tea)","NIC",70.63,["NIC","WAI","CKM","YIU","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-11","WestJet - fare","NIC",480.00,["NIC","WAI","CKM"]],
+["2026-07-12","Kayak - Lake Louise","NIC",189.00,["NIC","WAI","CKM","YIU","HUEN","TOBY","SZE","CHUNG"]],
+["2026-07-12","Cannabis - Banff","NIC",20.00,["NIC","WAI"]],
+["2026-07-13","Lunch - Yama Onigiri","NIC",114.00,["NIC","WAI","CKM","YIU","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-13","Gas","NIC",48.31,["NIC","WAI","CKM","YIU","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-13","Brewing - Canmore","NIC",27.00,["NIC","WAI"]],
+["2026-07-13","Canmore Brewing - Yuzu","NIC",18.85,["NIC","WAI","CKM","YIU","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-11","Parking in Banff","NIC",60.00,["NIC","WAI","CKM","YIU","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-09","Dinner - Cactus Club","NIC",111.18,["NIC","WAI","CKM","YIU"]],
+["2026-07-12","Shuttle bus - Lake Louise","NIC",70.75,["NIC","WAI","CKM","YIU","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-11","Dollarama","NIC",10.12,["NIC","WAI","CKM","YIU","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-11","Cannabis - Value Buds","NIC",10.05,["NIC","WAI"]],
+["2026-07-11","Grocery - Safeway","NIC",141.09,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-11","Liquor - Banff","NIC",70.63,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-12","Kayak - Lake Louise (2)","NIC",189.00,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-13","Dinner - Ramen in Banff","NIC",207.66,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-13","Icefield trip","NIC",1327.20,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-13","Liquor - Jasper","NIC",43.07,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-13","Dinner - Jasper","NIC",596.48,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-13","Gas (2)","NIC",49.07,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-13","Grocery - Safeway Jasper","NIC",87.45,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-14","Parking - Jasper","NIC",14.00,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-14","Lunch - Jasper","NIC",401.76,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-14","Liquor - Calgary","NIC",89.00,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-14","Grocery - Calgary","NIC",15.02,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-14","After lunch drinks - Jasper","NIC",108.97,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-14","Dinner - Binno at Calgary","SZE",400.78,["NIC","CKM","YIU","WAI","HUEN","TOBY","CHUNG","SZE"]],
+["2026-07-06","Pho 37","CKM",98.46,["NIC","CKM","YIU","WAI","SZE"]],
+["2026-07-10","Dinner - Richmond Hestia Kitchen Bar","CKM",430.00,["NIC","CKM","YIU","WAI","SZE","TOBY","CHUNG"]],
+["2026-07-11","Car rental","NIC",849.82,["NIC","CKM","YIU","WAI","SZE","TOBY","CHUNG","HUEN"]],
+["2026-07-11","Car rental (2)","HUEN",695.81,["NIC","CKM","YIU","WAI","SZE","TOBY","CHUNG","HUEN"]]
+];
+SAVED_EXPENSES.forEach(([date, desc, paidBy, amount, splitWith]) => {
+  expenses.push({ id: nextId++, date, desc, paidBy, amount, splitWith: new Set(splitWith) });
+});
 
 function fmt(n){
   const sign = n < 0 ? "-" : "";
@@ -510,6 +585,185 @@ function renderAll(){
   renderBalances(net, paid, share);
   const txns = computeSettlement(net);
   renderReceipt(txns);
+}
+
+function csvEscape(v){
+  const s = String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function downloadBlob(content, filename, mime){
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Builds one CSV per section, all in one .csv file (opens directly in Excel/Sheets).
+// ---- Save / Load session data (round-trip CSV, separate from the report export) ----
+
+function saveDataCSV(){
+  const rows = [["Type","Name","Date","Description","PaidBy","Amount","SplitWith"]];
+  people.forEach(p => rows.push(["PERSON", p, "", "", "", "", ""]));
+  expenses.forEach(e => rows.push([
+    "EXPENSE", "", e.date || "", e.desc, e.paidBy, e.amount.toFixed(2), [...e.splitWith].join("|")
+  ]));
+  const csv = rows.map(r => r.map(csvEscape).join(",")).join("\n");
+  downloadBlob("\uFEFF" + csv, "split_session.csv", "text/csv;charset=utf-8");
+}
+
+// Minimal CSV parser: handles quoted fields, embedded commas, escaped quotes, and CRLF/LF.
+function parseCSVText(text){
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  text = text.replace(/^\uFEFF/, ""); // strip BOM if present
+  for(let i = 0; i < text.length; i++){
+    const c = text[i], next = text[i+1];
+    if(inQuotes){
+      if(c === '"' && next === '"'){ field += '"'; i++; }
+      else if(c === '"'){ inQuotes = false; }
+      else { field += c; }
+    } else {
+      if(c === '"'){ inQuotes = true; }
+      else if(c === ','){ row.push(field); field = ""; }
+      else if(c === '\n' || c === '\r'){
+        if(c === '\r' && next === '\n') i++;
+        row.push(field); field = "";
+        if(row.length > 1 || row[0] !== ""){ rows.push(row); }
+        row = [];
+      } else { field += c; }
+    }
+  }
+  if(field !== "" || row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+
+function loadDataCSV(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const rows = parseCSVText(reader.result);
+      if(rows.length < 1){ throw new Error("Empty file"); }
+      const header = rows[0].map(h => h.trim().toLowerCase());
+      const idx = {
+        type: header.indexOf("type"), name: header.indexOf("name"),
+        date: header.indexOf("date"), desc: header.indexOf("description"),
+        paidBy: header.indexOf("paidby"), amount: header.indexOf("amount"),
+        splitWith: header.indexOf("splitwith")
+      };
+      if(idx.type === -1){ throw new Error("This doesn't look like a Split session file."); }
+
+      const newPeople = [];
+      const newExpenses = [];
+      let maxId = 0;
+      for(let i = 1; i < rows.length; i++){
+        const r = rows[i];
+        if(!r || r.length === 0) continue;
+        const type = (r[idx.type] || "").trim().toUpperCase();
+        if(type === "PERSON"){
+          const name = (r[idx.name] || "").trim();
+          if(name && !newPeople.includes(name)) newPeople.push(name);
+        } else if(type === "EXPENSE"){
+          const amt = parseFloat(r[idx.amount]);
+          const splitWith = new Set((r[idx.splitWith] || "").split("|").map(s => s.trim()).filter(Boolean));
+          if(!r[idx.paidBy] || !amt || splitWith.size === 0) continue;
+          maxId++;
+          newExpenses.push({
+            id: maxId, date: r[idx.date] || "", desc: r[idx.desc] || "",
+            paidBy: r[idx.paidBy].trim(), amount: amt, splitWith
+          });
+        }
+      }
+      if(newPeople.length === 0){ throw new Error("No people found in this file."); }
+
+      people = newPeople;
+      expenses = newExpenses;
+      nextId = maxId + 1;
+      currentSplit = new Set(people);
+      renderPeople();
+      renderAll();
+      alert(`Loaded ${newPeople.length} people and ${newExpenses.length} expenses.`);
+    } catch(err){
+      alert("Couldn't read that file: " + err.message);
+    } finally {
+      event.target.value = "";
+    }
+  };
+  reader.readAsText(file);
+}
+
+function exportToExcel(){
+  const { paid, share, net } = computeBalances();
+  const txns = computeSettlement(net);
+  const rows = [];
+
+  rows.push(["EXPENSES"]);
+  rows.push(["Date","Description","Paid By","Amount","Split With","Share Each"]);
+  expenses.forEach(e => {
+    rows.push([
+      e.date || "", e.desc, e.paidBy, e.amount.toFixed(2),
+      [...e.splitWith].join(" | "), (e.amount / e.splitWith.size).toFixed(2)
+    ]);
+  });
+  rows.push([]);
+  rows.push(["BALANCES"]);
+  rows.push(["Name","Total Paid","Total Share","Net Balance"]);
+  people.forEach(p => {
+    rows.push([p, (paid[p]||0).toFixed(2), (share[p]||0).toFixed(2), (net[p]||0).toFixed(2)]);
+  });
+  rows.push([]);
+  rows.push(["SETTLEMENT"]);
+  rows.push(["From","To","Amount"]);
+  if(txns.length){
+    txns.forEach(t => rows.push([t.from, t.to, t.amt.toFixed(2)]));
+  } else {
+    rows.push(["Everyone is settled up","",""]);
+  }
+
+  const csv = rows.map(r => r.map(csvEscape).join(",")).join("\n");
+  downloadBlob("\uFEFF" + csv, "group_expenses.csv", "text/csv;charset=utf-8");
+}
+
+// Renders a print-only view in this same page and opens the browser's print dialog —
+// no new tab/window, so it can't be blocked by a popup blocker.
+function exportToPDF(){
+  const { paid, share, net } = computeBalances();
+  const txns = computeSettlement(net);
+
+  const expRows = expenses.map(e => `<tr>
+    <td>${escapeHtml(e.date||'—')}</td><td>${escapeHtml(e.desc)}</td>
+    <td>${escapeHtml(e.paidBy)}</td><td style="text-align:right">${fmt(e.amount)}</td></tr>`).join("");
+
+  const balRows = people.map(p => `<tr>
+    <td>${escapeHtml(p)}</td><td style="text-align:right">${fmt(paid[p]||0)}</td>
+    <td style="text-align:right">${fmt(share[p]||0)}</td>
+    <td style="text-align:right">${fmt(net[p]||0)}</td></tr>`).join("");
+
+  const setRows = txns.length
+    ? txns.map(t => `<tr><td>${escapeHtml(t.from)}</td><td>${escapeHtml(t.to)}</td>
+        <td style="text-align:right">${fmt(t.amt)}</td></tr>`).join("")
+    : '<tr><td colspan="3">Everyone is settled up — no payments needed.</td></tr>';
+
+  document.getElementById('printArea').innerHTML = `
+    <h1>Group Expense Ledger</h1>
+    <div class="sub">Generated ${new Date().toLocaleDateString()}</div>
+    <h2>Expenses</h2>
+    <table><thead><tr><th>Date</th><th>Description</th><th>Paid By</th><th>Amount</th></tr></thead>
+    <tbody>${expRows}</tbody></table>
+    <h2>Balances</h2>
+    <table><thead><tr><th>Name</th><th>Paid</th><th>Share</th><th>Net</th></tr></thead>
+    <tbody>${balRows}</tbody></table>
+    <h2>Settle Up</h2>
+    <table><thead><tr><th>From</th><th>To</th><th>Amount</th></tr></thead>
+    <tbody>${setRows}</tbody></table>`;
+
+  window.print();
 }
 
 // init
