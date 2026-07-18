@@ -122,7 +122,7 @@
   /* Expense form */
   .exp-grid{
     display:grid;
-    grid-template-columns: 130px 1fr 140px 110px;
+    grid-template-columns: 130px 1fr 140px 110px 90px;
     gap: 10px;
     margin-bottom: 12px;
   }
@@ -175,6 +175,19 @@
   .pos{ color: var(--teal-dark); }
   .neg{ color: var(--rust); }
 
+  .badge{
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px; padding: 1px 6px; border-radius: 4px;
+    background: var(--paper-dark); border: 1px solid var(--line); color: var(--ink-soft);
+  }
+  .rate-bar{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13.5px;
+  }
+  .rate-bar input[type=number]{ width: 100px; }
+  .rate-note{ font-size: 11.5px; color: var(--ink-soft); flex-basis: 100%; }
+
   /* Receipt */
   .receipt{
     background: var(--paper-dark);
@@ -199,7 +212,7 @@
     color: var(--ink-soft); font-size: 12px; margin-top: 30px;
   }
   @media (max-width: 620px){
-    .exp-grid{ grid-template-columns: 1fr 1fr; }
+    .exp-grid{ grid-template-columns: 1fr 1fr 1fr; }
   }
 
   #printArea{ display:none; }
@@ -237,6 +250,30 @@
   </div>
 
   <div class="card">
+    <h2 style="margin-bottom:10px;">Currency</h2>
+    <div class="rate-bar">
+      <span>Exchange rate: 1 HKD =</span>
+      <input type="number" id="exchangeRateHKD" value="0.1792" step="0.0001" min="0" onchange="renderAll()">
+      <span>CAD</span>
+      <span class="rate-note">Set from the mid-market rate as of Jul 16, 2026 (via Xe) — update this whenever the rate moves. Search "HKD to CAD" for the latest.</span>
+    </div>
+    <div class="rate-bar" style="margin-top:12px;">
+      <span>Exchange rate: 1 USD =</span>
+      <input type="number" id="exchangeRateUSD" value="1.4022" step="0.0001" min="0" onchange="renderAll()">
+      <span>CAD</span>
+      <span class="rate-note">Set from the mid-market rate as of Jul 17, 2026 (via Xe) — update this whenever the rate moves. Search "USD to CAD" for the latest.</span>
+    </div>
+    <div class="rate-bar" style="margin-top:12px;">
+      <span>Show balances &amp; settlement in:</span>
+      <select id="displayCurrency" onchange="renderAll()">
+        <option value="CAD">CAD</option>
+        <option value="HKD">HKD</option>
+        <option value="USD">USD</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card">
     <h2><span class="n">1</span>People</h2>
     <div class="people-row" id="peopleRow"></div>
     <div class="add-person">
@@ -263,6 +300,14 @@
       <div>
         <label>Amount</label>
         <input type="number" id="expAmount" placeholder="0.00" step="0.01" min="0">
+      </div>
+      <div>
+        <label>Currency</label>
+        <select id="expCurrency">
+          <option value="CAD">CAD</option>
+          <option value="HKD">HKD</option>
+          <option value="USD">USD</option>
+        </select>
       </div>
     </div>
     <div class="split-row">
@@ -362,8 +407,40 @@ const SAVED_EXPENSES = [
 ["2026-07-11","Car rental (2)","HUEN",695.81,["NIC","CKM","YIU","WAI","SZE","TOBY","CHUNG","HUEN"]]
 ];
 SAVED_EXPENSES.forEach(([date, desc, paidBy, amount, splitWith]) => {
-  expenses.push({ id: nextId++, date, desc, paidBy, amount, splitWith: new Set(splitWith) });
+  expenses.push({ id: nextId++, date, desc, paidBy, amount, currency: "CAD", splitWith: new Set(splitWith) });
 });
+
+const RATE_INPUT_IDS = { HKD: 'exchangeRateHKD', USD: 'exchangeRateUSD' };
+const DEFAULT_RATES = { HKD: 0.1792, USD: 1.4022 };
+
+// Returns "1 <currency> = X CAD" for HKD or USD. CAD's own rate is always 1.
+function getRate(currency){
+  if(currency === "CAD") return 1;
+  const el = document.getElementById(RATE_INPUT_IDS[currency]);
+  const v = el ? parseFloat(el.value) : NaN;
+  return (v > 0) ? v : DEFAULT_RATES[currency];
+}
+
+// Converts an amount in the given currency to CAD, the common currency all balances use.
+function toCAD(amount, currency){
+  return amount * getRate(currency);
+}
+
+function getDisplayCurrency(){
+  return document.getElementById('displayCurrency').value;
+}
+
+// Converts a CAD amount (the internal common currency) into whichever currency
+// the person has chosen to view balances/settlement in.
+function fromCAD(amountCAD){
+  const cur = getDisplayCurrency();
+  return cur === "CAD" ? amountCAD : amountCAD / getRate(cur);
+}
+
+// Formats a CAD-denominated amount in the currently selected display currency, with a suffix.
+function fmtDisplay(amountCAD){
+  return fmt(fromCAD(amountCAD)) + " " + getDisplayCurrency();
+}
 
 function fmt(n){
   const sign = n < 0 ? "-" : "";
@@ -455,6 +532,7 @@ function addExpense(){
   const desc = document.getElementById('expDesc').value.trim();
   const paidBy = document.getElementById('expPaidBy').value;
   const amount = parseFloat(document.getElementById('expAmount').value);
+  const currency = document.getElementById('expCurrency').value;
 
   if(!paidBy){ alert("Add at least one person first."); return; }
   if(!desc){ alert("Give the expense a description."); return; }
@@ -467,6 +545,7 @@ function addExpense(){
     desc,
     paidBy,
     amount,
+    currency,
     splitWith: new Set(currentSplit)
   });
 
@@ -487,13 +566,15 @@ function renderExpenseTable(){
     return;
   }
   let rows = expenses.map(e => {
+    const cur = e.currency || "CAD";
     const share = e.amount / e.splitWith.size;
     const splitNames = [...e.splitWith].join(', ');
+    const cadEquiv = cur === "HKD" ? ` <span class="muted">(≈ ${fmt(toCAD(e.amount, cur))} CAD)</span>` : "";
     return `<tr>
       <td class="muted">${e.date || '—'}</td>
-      <td>${escapeHtml(e.desc)}<br><span class="muted">${escapeHtml(splitNames)} (${fmt(share)} each)</span></td>
+      <td>${escapeHtml(e.desc)}<br><span class="muted">${escapeHtml(splitNames)} (${fmt(share)} ${cur} each)</span></td>
       <td>${escapeHtml(e.paidBy)}</td>
-      <td class="num">${fmt(e.amount)}</td>
+      <td class="num">${fmt(e.amount)} <span class="badge">${cur}</span>${cadEquiv}</td>
       <td><button class="btn-ghost" onclick="deleteExpense(${e.id})">Remove</button></td>
     </tr>`;
   }).join("");
@@ -507,8 +588,10 @@ function computeBalances(){
   const paid = {}, share = {};
   people.forEach(p => { paid[p] = 0; share[p] = 0; });
   expenses.forEach(e => {
-    paid[e.paidBy] = (paid[e.paidBy] || 0) + e.amount;
-    const per = e.amount / e.splitWith.size;
+    const cur = e.currency || "CAD";
+    const amountCAD = toCAD(e.amount, cur);
+    paid[e.paidBy] = (paid[e.paidBy] || 0) + amountCAD;
+    const per = amountCAD / e.splitWith.size;
     e.splitWith.forEach(p => { share[p] = (share[p] || 0) + per; });
   });
   const net = {};
@@ -519,14 +602,15 @@ function computeBalances(){
 function renderBalances(net, paid, share){
   const grid = document.getElementById('balGrid');
   if(people.length === 0){ grid.innerHTML = '<div class="empty">Add people to see balances.</div>'; return; }
+  const cur = getDisplayCurrency();
   grid.innerHTML = people.map(p => {
     const n = net[p] || 0;
     const cls = n >= 0.005 ? 'pos' : (n <= -0.005 ? 'neg' : '');
     const label = n >= 0.005 ? 'is owed' : (n <= -0.005 ? 'owes the group' : 'settled up');
     return `<div class="bal-card">
       <div class="bal-name">${escapeHtml(p)}</div>
-      <div class="bal-amt ${cls}">${fmt(Math.abs(n))}</div>
-      <div class="bal-sub">${label} · paid ${fmt(paid[p]||0)}, share ${fmt(share[p]||0)}</div>
+      <div class="bal-amt ${cls}">${fmt(Math.abs(fromCAD(n)))} <span class="badge">${cur}</span></div>
+      <div class="bal-sub">${label} · paid ${fmt(fromCAD(paid[p]||0))}, share ${fmt(fromCAD(share[p]||0))}</div>
     </div>`;
   }).join("");
 }
@@ -568,9 +652,10 @@ function renderReceipt(txns){
     wrap.innerHTML = '<div class="settled">Everyone is settled up — no payments needed.</div>';
     return;
   }
+  const cur = getDisplayCurrency();
   const lines = txns.map(t => `<div class="line">
     <span>${escapeHtml(t.from)} <span class="arrow">&#8594;</span> ${escapeHtml(t.to)}</span>
-    <span>${fmt(t.amt)}</span>
+    <span>${fmt(fromCAD(t.amt))} ${cur}</span>
   </div>`).join("");
   wrap.innerHTML = `<div class="receipt">${lines}</div>`;
 }
@@ -607,10 +692,12 @@ function downloadBlob(content, filename, mime){
 // ---- Save / Load session data (round-trip CSV, separate from the report export) ----
 
 function saveDataCSV(){
-  const rows = [["Type","Name","Date","Description","PaidBy","Amount","SplitWith"]];
-  people.forEach(p => rows.push(["PERSON", p, "", "", "", "", ""]));
+  const rows = [["Type","Name","Date","Description","PaidBy","Amount","Currency","SplitWith"]];
+  rows.push(["RATE", "", "", "", "", getRate("HKD"), "HKD", ""]);
+  rows.push(["RATE", "", "", "", "", getRate("USD"), "USD", ""]);
+  people.forEach(p => rows.push(["PERSON", p, "", "", "", "", "", ""]));
   expenses.forEach(e => rows.push([
-    "EXPENSE", "", e.date || "", e.desc, e.paidBy, e.amount.toFixed(2), [...e.splitWith].join("|")
+    "EXPENSE", "", e.date || "", e.desc, e.paidBy, e.amount.toFixed(2), e.currency || "CAD", [...e.splitWith].join("|")
   ]));
   const csv = rows.map(r => r.map(csvEscape).join(",")).join("\n");
   downloadBlob("\uFEFF" + csv, "split_session.csv", "text/csv;charset=utf-8");
@@ -655,28 +742,34 @@ function loadDataCSV(event){
         type: header.indexOf("type"), name: header.indexOf("name"),
         date: header.indexOf("date"), desc: header.indexOf("description"),
         paidBy: header.indexOf("paidby"), amount: header.indexOf("amount"),
-        splitWith: header.indexOf("splitwith")
+        currency: header.indexOf("currency"), splitWith: header.indexOf("splitwith")
       };
       if(idx.type === -1){ throw new Error("This doesn't look like a Split session file."); }
 
       const newPeople = [];
       const newExpenses = [];
       let maxId = 0;
+      const loadedRates = {};
       for(let i = 1; i < rows.length; i++){
         const r = rows[i];
         if(!r || r.length === 0) continue;
         const type = (r[idx.type] || "").trim().toUpperCase();
-        if(type === "PERSON"){
+        if(type === "RATE"){
+          const rv = parseFloat(r[idx.amount]);
+          const rc = (idx.currency > -1 && r[idx.currency]) ? r[idx.currency].trim().toUpperCase() : "HKD";
+          if(rv > 0 && RATE_INPUT_IDS[rc]) loadedRates[rc] = rv;
+        } else if(type === "PERSON"){
           const name = (r[idx.name] || "").trim();
           if(name && !newPeople.includes(name)) newPeople.push(name);
         } else if(type === "EXPENSE"){
           const amt = parseFloat(r[idx.amount]);
+          const currency = (idx.currency > -1 && r[idx.currency]) ? r[idx.currency].trim() : "CAD";
           const splitWith = new Set((r[idx.splitWith] || "").split("|").map(s => s.trim()).filter(Boolean));
           if(!r[idx.paidBy] || !amt || splitWith.size === 0) continue;
           maxId++;
           newExpenses.push({
             id: maxId, date: r[idx.date] || "", desc: r[idx.desc] || "",
-            paidBy: r[idx.paidBy].trim(), amount: amt, splitWith
+            paidBy: r[idx.paidBy].trim(), amount: amt, currency, splitWith
           });
         }
       }
@@ -686,6 +779,9 @@ function loadDataCSV(event){
       expenses = newExpenses;
       nextId = maxId + 1;
       currentSplit = new Set(people);
+      Object.keys(loadedRates).forEach(cur => {
+        document.getElementById(RATE_INPUT_IDS[cur]).value = loadedRates[cur];
+      });
       renderPeople();
       renderAll();
       alert(`Loaded ${newPeople.length} people and ${newExpenses.length} expenses.`);
@@ -703,25 +799,29 @@ function exportToExcel(){
   const txns = computeSettlement(net);
   const rows = [];
 
+  rows.push(["Exchange rates used", `1 HKD = ${getRate("HKD")} CAD`, `1 USD = ${getRate("USD")} CAD`]);
+  rows.push([]);
   rows.push(["EXPENSES"]);
-  rows.push(["Date","Description","Paid By","Amount","Split With","Share Each"]);
+  rows.push(["Date","Description","Paid By","Amount","Currency","Amount (CAD)","Split With","Share Each (CAD)"]);
   expenses.forEach(e => {
+    const cur = e.currency || "CAD";
+    const cad = toCAD(e.amount, cur);
     rows.push([
-      e.date || "", e.desc, e.paidBy, e.amount.toFixed(2),
-      [...e.splitWith].join(" | "), (e.amount / e.splitWith.size).toFixed(2)
+      e.date || "", e.desc, e.paidBy, e.amount.toFixed(2), cur, cad.toFixed(2),
+      [...e.splitWith].join(" | "), (cad / e.splitWith.size).toFixed(2)
     ]);
   });
   rows.push([]);
-  rows.push(["BALANCES"]);
+  rows.push([`BALANCES (in ${getDisplayCurrency()})`]);
   rows.push(["Name","Total Paid","Total Share","Net Balance"]);
   people.forEach(p => {
-    rows.push([p, (paid[p]||0).toFixed(2), (share[p]||0).toFixed(2), (net[p]||0).toFixed(2)]);
+    rows.push([p, fromCAD(paid[p]||0).toFixed(2), fromCAD(share[p]||0).toFixed(2), fromCAD(net[p]||0).toFixed(2)]);
   });
   rows.push([]);
-  rows.push(["SETTLEMENT"]);
+  rows.push([`SETTLEMENT (in ${getDisplayCurrency()})`]);
   rows.push(["From","To","Amount"]);
   if(txns.length){
-    txns.forEach(t => rows.push([t.from, t.to, t.amt.toFixed(2)]));
+    txns.forEach(t => rows.push([t.from, t.to, fromCAD(t.amt).toFixed(2)]));
   } else {
     rows.push(["Everyone is settled up","",""]);
   }
@@ -736,30 +836,35 @@ function exportToPDF(){
   const { paid, share, net } = computeBalances();
   const txns = computeSettlement(net);
 
-  const expRows = expenses.map(e => `<tr>
+  const expRows = expenses.map(e => {
+    const cur = e.currency || "CAD";
+    const cadNote = cur !== "CAD" ? ` (≈ ${fmt(toCAD(e.amount, cur))} CAD)` : "";
+    return `<tr>
     <td>${escapeHtml(e.date||'—')}</td><td>${escapeHtml(e.desc)}</td>
-    <td>${escapeHtml(e.paidBy)}</td><td style="text-align:right">${fmt(e.amount)}</td></tr>`).join("");
+    <td>${escapeHtml(e.paidBy)}</td><td style="text-align:right">${fmt(e.amount)} ${cur}${cadNote}</td></tr>`;
+  }).join("");
 
+  const cur = getDisplayCurrency();
   const balRows = people.map(p => `<tr>
-    <td>${escapeHtml(p)}</td><td style="text-align:right">${fmt(paid[p]||0)}</td>
-    <td style="text-align:right">${fmt(share[p]||0)}</td>
-    <td style="text-align:right">${fmt(net[p]||0)}</td></tr>`).join("");
+    <td>${escapeHtml(p)}</td><td style="text-align:right">${fmt(fromCAD(paid[p]||0))}</td>
+    <td style="text-align:right">${fmt(fromCAD(share[p]||0))}</td>
+    <td style="text-align:right">${fmt(fromCAD(net[p]||0))}</td></tr>`).join("");
 
   const setRows = txns.length
     ? txns.map(t => `<tr><td>${escapeHtml(t.from)}</td><td>${escapeHtml(t.to)}</td>
-        <td style="text-align:right">${fmt(t.amt)}</td></tr>`).join("")
+        <td style="text-align:right">${fmt(fromCAD(t.amt))} ${cur}</td></tr>`).join("")
     : '<tr><td colspan="3">Everyone is settled up — no payments needed.</td></tr>';
 
   document.getElementById('printArea').innerHTML = `
     <h1>Group Expense Ledger</h1>
-    <div class="sub">Generated ${new Date().toLocaleDateString()}</div>
+    <div class="sub">Generated ${new Date().toLocaleDateString()} · Rates used: 1 HKD = ${getRate("HKD")} CAD, 1 USD = ${getRate("USD")} CAD</div>
     <h2>Expenses</h2>
     <table><thead><tr><th>Date</th><th>Description</th><th>Paid By</th><th>Amount</th></tr></thead>
     <tbody>${expRows}</tbody></table>
-    <h2>Balances</h2>
+    <h2>Balances (${cur})</h2>
     <table><thead><tr><th>Name</th><th>Paid</th><th>Share</th><th>Net</th></tr></thead>
     <tbody>${balRows}</tbody></table>
-    <h2>Settle Up</h2>
+    <h2>Settle Up (${cur})</h2>
     <table><thead><tr><th>From</th><th>To</th><th>Amount</th></tr></thead>
     <tbody>${setRows}</tbody></table>`;
 
