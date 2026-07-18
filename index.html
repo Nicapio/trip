@@ -158,6 +158,13 @@
   tbody td{ padding: 10px 8px; border-bottom: 1px dashed var(--line); vertical-align: top;}
   tbody tr:last-child td{ border-bottom: none; }
   .num{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-align:right; white-space:nowrap;}
+  .group-header td{
+    background: var(--paper-dark);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-weight: 700; font-size: 13px; color: var(--teal-dark);
+    padding: 9px 8px; border-bottom: 1px solid var(--line); border-top: 1px solid var(--line);
+  }
+  .group-header .group-total{ font-weight:600; color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .muted{ color: var(--ink-soft); font-size: 12px; }
   .empty{
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -325,7 +332,16 @@
   </div>
 
   <div class="card">
-    <h2><span class="n">3</span>Expense log</h2>
+    <h2 style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <span><span class="n">3</span>Expense log</span>
+      <span style="display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:normal; font-size:12.5px; color:var(--ink-soft);">
+        Group by
+        <select id="expenseGrouping" onchange="renderExpenseTable()" style="width:auto; padding:5px 8px;">
+          <option value="payer">Who paid</option>
+          <option value="date">Date</option>
+        </select>
+      </span>
+    </h2>
     <div id="expenseTableWrap"></div>
   </div>
 
@@ -565,23 +581,61 @@ function renderExpenseTable(){
     wrap.innerHTML = '<div class="empty">No expenses yet — add your first one above.</div>';
     return;
   }
-  let rows = expenses.map(e => {
+
+  const groupSel = document.getElementById('expenseGrouping');
+  const grouping = groupSel ? groupSel.value : 'payer';
+
+  const expenseRowHtml = (e, showPaidBy) => {
     const cur = e.currency || "CAD";
     const share = e.amount / e.splitWith.size;
     const splitNames = [...e.splitWith].join(', ');
-    const cadEquiv = cur === "HKD" ? ` <span class="muted">(≈ ${fmt(toCAD(e.amount, cur))} CAD)</span>` : "";
+    const cadEquiv = cur !== "CAD" ? ` <span class="muted">(≈ ${fmt(toCAD(e.amount, cur))} CAD)</span>` : "";
+    const paidByCell = showPaidBy ? `<td>${escapeHtml(e.paidBy)}</td>` : "";
     return `<tr>
       <td class="muted">${e.date || '—'}</td>
       <td>${escapeHtml(e.desc)}<br><span class="muted">${escapeHtml(splitNames)} (${fmt(share)} ${cur} each)</span></td>
-      <td>${escapeHtml(e.paidBy)}</td>
+      ${paidByCell}
       <td class="num">${fmt(e.amount)} <span class="badge">${cur}</span>${cadEquiv}</td>
       <td><button class="btn-ghost" onclick="deleteExpense(${e.id})">Remove</button></td>
     </tr>`;
-  }).join("");
-  wrap.innerHTML = `<table>
-    <thead><tr><th>Date</th><th>Description</th><th>Paid by</th><th class="num">Amount</th><th></th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+  };
+
+  if(grouping === 'payer'){
+    // Group expenses by who paid, each group sorted by date, groups ordered by total paid (highest first).
+    const byPayer = {};
+    expenses.forEach(e => {
+      const key = e.paidBy || "—";
+      if(!byPayer[key]) byPayer[key] = [];
+      byPayer[key].push(e);
+    });
+    const payerOrder = Object.keys(byPayer).sort((a, b) => {
+      const totalA = byPayer[a].reduce((s, e) => s + toCAD(e.amount, e.currency || "CAD"), 0);
+      const totalB = byPayer[b].reduce((s, e) => s + toCAD(e.amount, e.currency || "CAD"), 0);
+      return totalB - totalA;
+    });
+
+    let body = "";
+    payerOrder.forEach(payer => {
+      const group = byPayer[payer].slice().sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+      const totalCAD = group.reduce((s, e) => s + toCAD(e.amount, e.currency || "CAD"), 0);
+      body += `<tr class="group-header">
+        <td colspan="3">${escapeHtml(payer)} <span class="muted">paid for ${group.length} expense${group.length === 1 ? '' : 's'}</span></td>
+        <td class="num group-total">${fmt(totalCAD)} CAD</td>
+      </tr>`;
+      body += group.map(e => expenseRowHtml(e, false)).join("");
+    });
+    wrap.innerHTML = `<table>
+      <thead><tr><th>Date</th><th>Description</th><th></th><th class="num">Amount</th><th></th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>`;
+  } else {
+    const sorted = expenses.slice().sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    const rows = sorted.map(e => expenseRowHtml(e, true)).join("");
+    wrap.innerHTML = `<table>
+      <thead><tr><th>Date</th><th>Description</th><th>Paid by</th><th class="num">Amount</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
 }
 
 function computeBalances(){
