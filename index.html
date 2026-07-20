@@ -117,6 +117,12 @@
     display:flex; align-items:center; justify-content:center;
   }
   .chip button:hover{ background: #FBEDEA; }
+  .chip select.chip-currency{
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px; padding: 2px 4px; border-radius: 4px;
+    border: 1px solid var(--line); background: var(--white); color: var(--teal-dark);
+    width: auto;
+  }
   .add-person{ display:flex; gap:8px; max-width: 340px; }
 
   /* Expense form */
@@ -355,11 +361,17 @@
   <div class="card">
     <h2 style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <span><span class="n">5</span>Settle up</span>
-      <span style="display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:normal; font-size:12.5px; color:var(--ink-soft);">
-        Payment flow
-        <select id="settlementMode" onchange="renderAll()" style="width:auto; padding:5px 8px;">
-          <option value="auto">Automatic (fewest payments)</option>
-        </select>
+      <span style="display:flex; align-items:center; gap:14px; text-transform:none; letter-spacing:normal; font-size:12.5px; color:var(--ink-soft); flex-wrap:wrap;">
+        <span style="display:flex; align-items:center; gap:8px;">
+          Payment flow
+          <select id="settlementMode" onchange="renderAll()" style="width:auto; padding:5px 8px;">
+            <option value="auto">Automatic (fewest payments)</option>
+          </select>
+        </span>
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+          <input type="checkbox" id="usePreferredCurrencies" checked onchange="renderAll()">
+          Pay in each person's own currency (fewest exchanges)
+        </label>
       </span>
     </h2>
     <div id="receiptWrap"></div>
@@ -384,6 +396,14 @@ let people = ["NIC","CKM","WAI","YIU","HUEN","TOBY","CHUNG","SZE"];
 let expenses = []; // {id, date, desc, paidBy, amount, splitWith: Set of names}
 let nextId = 1;
 let currentSplit = new Set(people);
+
+// Each person's preferred currency to pay/receive in — used to route settlement
+// payments so people transact in currency they actually hold, minimizing FX conversions.
+let personCurrency = {
+  HUEN: "USD", SZE: "CAD", YIU: "CAD",
+  CHUNG: "HKD", TOBY: "HKD", WAI: "HKD",
+  CKM: "CAD", NIC: "CAD"
+};
 
 // Your Rockies trip data, restored so you don't have to re-enter it.
 const SAVED_EXPENSES = [
@@ -456,11 +476,19 @@ function getDisplayCurrency(){
   return document.getElementById('displayCurrency').value;
 }
 
+function getPersonCurrency(name){
+  return personCurrency[name] || "CAD";
+}
+
+// Converts a CAD amount into any target currency (not just the global display selector).
+function convertCADToCurrency(amountCAD, targetCurrency){
+  return targetCurrency === "CAD" ? amountCAD : amountCAD / getRate(targetCurrency);
+}
+
 // Converts a CAD amount (the internal common currency) into whichever currency
 // the person has chosen to view balances/settlement in.
 function fromCAD(amountCAD){
-  const cur = getDisplayCurrency();
-  return cur === "CAD" ? amountCAD : amountCAD / getRate(cur);
+  return convertCADToCurrency(amountCAD, getDisplayCurrency());
 }
 
 // Formats a CAD-denominated amount in the currently selected display currency, with a suffix.
@@ -483,6 +511,17 @@ function renderPeople(){
     const chip = document.createElement('div');
     chip.className = 'chip';
     chip.innerHTML = `<span>${escapeHtml(name)}</span>`;
+    const curSel = document.createElement('select');
+    curSel.className = 'chip-currency';
+    ["CAD","HKD","USD"].forEach(c => {
+      const o = document.createElement('option');
+      o.value = c; o.textContent = c;
+      curSel.appendChild(o);
+    });
+    curSel.value = getPersonCurrency(name);
+    curSel.title = name + "'s preferred currency to pay/receive in";
+    curSel.onchange = () => { personCurrency[name] = curSel.value; renderAll(); };
+    chip.appendChild(curSel);
     const rm = document.createElement('button');
     rm.textContent = '×';
     rm.title = 'Remove ' + name;
@@ -760,6 +799,20 @@ function getSettlementTxns(net){
   return computeSettlement(net);
 }
 
+// Decides which currency to display a given settlement transaction in.
+// When "pay in each person's own currency" is on: the payer pays in whatever they hold,
+// EXCEPT when the hub is paying someone else out — then it's shown in the receiver's
+// preferred currency, since the hub is the flexible party. This is what avoids conversions.
+function getTxnCurrency(t){
+  const usePref = document.getElementById('usePreferredCurrencies').checked;
+  if(!usePref) return getDisplayCurrency();
+  const modeSel = document.getElementById('settlementMode');
+  const mode = modeSel ? modeSel.value : 'auto';
+  const hub = mode.startsWith('hub:') ? mode.slice(4) : null;
+  if(hub && t.from === hub) return getPersonCurrency(t.to);
+  return getPersonCurrency(t.from);
+}
+
 function renderReceipt(txns){
   const wrap = document.getElementById('receiptWrap');
   if(expenses.length === 0){
@@ -770,11 +823,14 @@ function renderReceipt(txns){
     wrap.innerHTML = '<div class="settled">Everyone is settled up — no payments needed.</div>';
     return;
   }
-  const cur = getDisplayCurrency();
-  const lines = txns.map(t => `<div class="line">
+  const lines = txns.map(t => {
+    const cur = getTxnCurrency(t);
+    const amt = convertCADToCurrency(t.amt, cur);
+    return `<div class="line">
     <span>${escapeHtml(t.from)} <span class="arrow">&#8594;</span> ${escapeHtml(t.to)}</span>
-    <span>${fmt(fromCAD(t.amt))} ${cur}</span>
-  </div>`).join("");
+    <span>${fmt(amt)} ${cur}</span>
+  </div>`;
+  }).join("");
   wrap.innerHTML = `<div class="receipt">${lines}</div>`;
 }
 
@@ -813,7 +869,7 @@ function saveDataCSV(){
   const rows = [["Type","Name","Date","Description","PaidBy","Amount","Currency","SplitWith"]];
   rows.push(["RATE", "", "", "", "", getRate("HKD"), "HKD", ""]);
   rows.push(["RATE", "", "", "", "", getRate("USD"), "USD", ""]);
-  people.forEach(p => rows.push(["PERSON", p, "", "", "", "", "", ""]));
+  people.forEach(p => rows.push(["PERSON", p, "", "", "", "", getPersonCurrency(p), ""]));
   expenses.forEach(e => rows.push([
     "EXPENSE", "", e.date || "", e.desc, e.paidBy, e.amount.toFixed(2), e.currency || "CAD", [...e.splitWith].join("|")
   ]));
@@ -866,6 +922,7 @@ function loadDataCSV(event){
 
       const newPeople = [];
       const newExpenses = [];
+      const newPersonCurrency = {};
       let maxId = 0;
       const loadedRates = {};
       for(let i = 1; i < rows.length; i++){
@@ -879,6 +936,8 @@ function loadDataCSV(event){
         } else if(type === "PERSON"){
           const name = (r[idx.name] || "").trim();
           if(name && !newPeople.includes(name)) newPeople.push(name);
+          const pc = (idx.currency > -1 && r[idx.currency]) ? r[idx.currency].trim().toUpperCase() : "";
+          if(name && ["CAD","HKD","USD"].includes(pc)) newPersonCurrency[name] = pc;
         } else if(type === "EXPENSE"){
           const amt = parseFloat(r[idx.amount]);
           const currency = (idx.currency > -1 && r[idx.currency]) ? r[idx.currency].trim() : "CAD";
@@ -895,6 +954,7 @@ function loadDataCSV(event){
 
       people = newPeople;
       expenses = newExpenses;
+      personCurrency = newPersonCurrency;
       nextId = maxId + 1;
       currentSplit = new Set(people);
       Object.keys(loadedRates).forEach(cur => {
@@ -936,12 +996,16 @@ function exportToExcel(){
     rows.push([p, fromCAD(paid[p]||0).toFixed(2), fromCAD(share[p]||0).toFixed(2), fromCAD(net[p]||0).toFixed(2)]);
   });
   rows.push([]);
-  rows.push([`SETTLEMENT (in ${getDisplayCurrency()})`]);
-  rows.push(["From","To","Amount"]);
+  const usePrefCsv = document.getElementById('usePreferredCurrencies').checked;
+  rows.push([usePrefCsv ? "SETTLEMENT (each in the paying/receiving person's own currency)" : `SETTLEMENT (in ${getDisplayCurrency()})`]);
+  rows.push(["From","To","Amount","Currency"]);
   if(txns.length){
-    txns.forEach(t => rows.push([t.from, t.to, fromCAD(t.amt).toFixed(2)]));
+    txns.forEach(t => {
+      const cur = getTxnCurrency(t);
+      rows.push([t.from, t.to, convertCADToCurrency(t.amt, cur).toFixed(2), cur]);
+    });
   } else {
-    rows.push(["Everyone is settled up","",""]);
+    rows.push(["Everyone is settled up","","",""]);
   }
 
   const csv = rows.map(r => r.map(csvEscape).join(",")).join("\n");
@@ -986,14 +1050,18 @@ function exportToPDF(){
   }
 
   const cur = getDisplayCurrency();
+  const usePref = document.getElementById('usePreferredCurrencies').checked;
   const balRows = people.map(p => `<tr>
     <td>${escapeHtml(p)}</td><td style="text-align:right">${fmt(fromCAD(paid[p]||0))}</td>
     <td style="text-align:right">${fmt(fromCAD(share[p]||0))}</td>
     <td style="text-align:right">${fmt(fromCAD(net[p]||0))}</td></tr>`).join("");
 
   const setRows = txns.length
-    ? txns.map(t => `<tr><td>${escapeHtml(t.from)}</td><td>${escapeHtml(t.to)}</td>
-        <td style="text-align:right">${fmt(fromCAD(t.amt))} ${cur}</td></tr>`).join("")
+    ? txns.map(t => {
+        const txCur = getTxnCurrency(t);
+        return `<tr><td>${escapeHtml(t.from)}</td><td>${escapeHtml(t.to)}</td>
+        <td style="text-align:right">${fmt(convertCADToCurrency(t.amt, txCur))} ${txCur}</td></tr>`;
+      }).join("")
     : '<tr><td colspan="3">Everyone is settled up — no payments needed.</td></tr>';
 
   document.getElementById('printArea').innerHTML = `
@@ -1004,7 +1072,7 @@ function exportToPDF(){
     <h2>Balances (${cur})</h2>
     <table><thead><tr><th>Name</th><th>Paid</th><th>Share</th><th>Net</th></tr></thead>
     <tbody>${balRows}</tbody></table>
-    <h2>Settle Up (${cur})</h2>
+    <h2>Settle Up ${usePref ? "(each in their own currency)" : `(${cur})`}</h2>
     <table><thead><tr><th>From</th><th>To</th><th>Amount</th></tr></thead>
     <tbody>${setRows}</tbody></table>`;
 
