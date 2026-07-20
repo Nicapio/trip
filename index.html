@@ -234,6 +234,7 @@
     #printArea th, #printArea td{ padding:5px 6px; border-bottom:1px solid #ddd; text-align:left; }
     #printArea th{ background:#0F6E5D !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     #printArea .group-header td{ background:#F0E9D8 !important; font-weight:700; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    #printArea .pdf-split{ color:#666; font-size:10px; }
   }
 </style>
 </head>
@@ -352,7 +353,15 @@
   </div>
 
   <div class="card">
-    <h2><span class="n">5</span>Settle up</h2>
+    <h2 style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <span><span class="n">5</span>Settle up</span>
+      <span style="display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:normal; font-size:12.5px; color:var(--ink-soft);">
+        Payment flow
+        <select id="settlementMode" onchange="renderAll()" style="width:auto; padding:5px 8px;">
+          <option value="auto">Automatic (fewest payments)</option>
+        </select>
+      </span>
+    </h2>
     <div id="receiptWrap"></div>
   </div>
 
@@ -491,6 +500,18 @@ function renderPeople(){
     sel.appendChild(opt);
   });
   if(people.includes(prevVal)) sel.value = prevVal;
+
+  const modeSel = document.getElementById('settlementMode');
+  const prevMode = modeSel.value;
+  modeSel.innerHTML = '<option value="auto">Automatic (fewest payments)</option>';
+  people.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = 'hub:' + name;
+    opt.textContent = 'Everyone pays ' + name;
+    modeSel.appendChild(opt);
+  });
+  const stillValid = [...modeSel.options].some(o => o.value === prevMode);
+  if(stillValid) modeSel.value = prevMode;
 
   renderSplitPeople();
 }
@@ -710,6 +731,35 @@ function computeSettlement(net){
   return txns;
 }
 
+// Routes every payment through a single hub person: everyone who owes money pays the hub
+// directly, and the hub pays out anyone else who's still owed money. Means at most one
+// payment per person (two for the hub itself), instead of the mathematically-fewest set.
+function computeHubSettlement(net, hub){
+  const txns = [];
+  let hubOwesOthers = 0;
+  Object.keys(net).forEach(p => {
+    if(p === hub) return;
+    const v = Math.round(net[p] * 100) / 100;
+    if(v < -0.004){
+      txns.push({ from: p, to: hub, amt: Math.round(-v * 100) / 100 });
+    } else if(v > 0.004){
+      txns.push({ from: hub, to: p, amt: v });
+    }
+  });
+  return txns;
+}
+
+// Reads the current "Payment flow" selection and returns the matching transaction list.
+function getSettlementTxns(net){
+  const modeSel = document.getElementById('settlementMode');
+  const mode = modeSel ? modeSel.value : 'auto';
+  if(mode.startsWith('hub:')){
+    const hub = mode.slice(4);
+    if(people.includes(hub)) return computeHubSettlement(net, hub);
+  }
+  return computeSettlement(net);
+}
+
 function renderReceipt(txns){
   const wrap = document.getElementById('receiptWrap');
   if(expenses.length === 0){
@@ -736,7 +786,7 @@ function renderAll(){
   renderExpenseTable();
   const { paid, share, net } = computeBalances();
   renderBalances(net, paid, share);
-  const txns = computeSettlement(net);
+  const txns = getSettlementTxns(net);
   renderReceipt(txns);
 }
 
@@ -864,7 +914,7 @@ function loadDataCSV(event){
 
 function exportToExcel(){
   const { paid, share, net } = computeBalances();
-  const txns = computeSettlement(net);
+  const txns = getSettlementTxns(net);
   const rows = [];
 
   rows.push(["Exchange rates used", `1 HKD = ${getRate("HKD")} CAD`, `1 USD = ${getRate("USD")} CAD`]);
@@ -902,15 +952,18 @@ function exportToExcel(){
 // no new tab/window, so it can't be blocked by a popup blocker.
 function exportToPDF(){
   const { paid, share, net } = computeBalances();
-  const txns = computeSettlement(net);
+  const txns = getSettlementTxns(net);
   const ordering = getExpenseOrdering();
 
   const printExpenseRow = (e, showPaidBy) => {
     const cur = e.currency || "CAD";
     const cadNote = cur !== "CAD" ? ` (≈ ${fmt(toCAD(e.amount, cur))} CAD)` : "";
+    const shareAmt = e.amount / e.splitWith.size;
+    const splitNames = [...e.splitWith].join(', ');
     const paidByCell = showPaidBy ? `<td>${escapeHtml(e.paidBy)}</td>` : "";
     return `<tr>
-    <td>${escapeHtml(e.date||'—')}</td><td>${escapeHtml(e.desc)}</td>
+    <td>${escapeHtml(e.date||'—')}</td>
+    <td>${escapeHtml(e.desc)}<br><span class="pdf-split">Split: ${escapeHtml(splitNames)} (${fmt(shareAmt)} ${cur} each)</span></td>
     ${paidByCell}<td style="text-align:right">${fmt(e.amount)} ${cur}${cadNote}</td></tr>`;
   };
 
